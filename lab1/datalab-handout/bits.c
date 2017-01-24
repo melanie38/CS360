@@ -301,9 +301,17 @@ int isPositive(int x) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
+	y = ~y + 1;
+	int result;
+	result = (x + y) ^ 1;
+	unsigned isPositive, isNegative, isNull;
+	isPositive = (((((0x7f << 8) ^ 0xff) << 8) ^ 0xff) << 8) ^ 0xff;
+	isNegative = 0x80 << 24;
+	isNull = 0x00;
 
-	return 2;
+	return (result & isPositive);
 }
+
 /*
  * ilog2 - return floor(log base 2 of x), where x > 0
  *   Example: ilog2(16) = 4
