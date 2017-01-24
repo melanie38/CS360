@@ -199,9 +199,10 @@ int getByte(int x, int n) {
  */
 int logicalShift(int x, int n) {
   // Perform arithmetic shift first
-  x = x >> n;
   // Build a mask 0(n)1(31-n)
-  int mask = ~(((1 << 31) >> n) << 1);
+  int mask; 
+  x = x >> n;
+  mask = ~(((1 << 31) >> n) << 1);
   // Convert the first n bits to zero by ANDing with mask
 
   return x & mask;
