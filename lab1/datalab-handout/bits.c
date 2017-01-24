@@ -405,8 +405,9 @@ unsigned float_i2f(int x) {
  */
 unsigned float_twice(unsigned uf) {
   // Get exp
-  unsigned exp = (uf >> 23) & 0xFF;
+  //unsigned exp = (uf >> 23) & 0xFF;
 
   // Get frac
-  unsigned frac = (uf << 9);
+  //unsigned frac = (uf << 9);
+  return 2;
 }
