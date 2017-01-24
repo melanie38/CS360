@@ -1,7 +1,7 @@
 /* 
  * CS:APP Data Lab 
  * 
- * Melanie Lambson - mlalahar
+ * <Please put your name and userid here>
  * 
  * bits.c - Source file with your solutions to the Lab.
  *          This is the file you will hand in to your instructor.
@@ -171,7 +171,8 @@ NOTES:
  *   Rating: 1
  */
 int bitAnd(int x, int y) {
-  return ~(~x|~y);
+  /* Returns negation of ~x OR'd with ~y */
+  return ~(~x | ~y);
 }
 /* 
  * getByte - Extract byte n from word x
@@ -182,10 +183,11 @@ int bitAnd(int x, int y) {
  *   Rating: 2
  */
 int getByte(int x, int n) {
-  int shift = 8*n;
-  unsigned int mask = 255 << shift;
-  unsigned int result = (x&mask) >> shift;
-  return result;
+  // Multiply n by 8, then right shift x by that amount)
+  // This drops bits to the right
+  x = x >> (n << 3);
+  // AND with a bitmask that grabs only the first byte
+  return x & 0xff;
 }
 /* 
  * logicalShift - shift x to the right by n, using a logical shift
@@ -196,8 +198,12 @@ int getByte(int x, int n) {
  *   Rating: 3 
  */
 int logicalShift(int x, int n) {
-  unsigned int result = (unsigned) x >>  n;
-  return result;
+  // Perform arithmetic shift first
+  x = x >> n;
+  // Build a mask 0(n)1(31-n)
+  int mask = ~(((1 << 31) >> n) << 1);
+  // Convert the first n bits to zero by ANDing with mask
+  return x & mask;
 }
 /*
  * bitCount - returns count of number of 1's in word
@@ -207,26 +213,7 @@ int logicalShift(int x, int n) {
  *   Rating: 4
  */
 int bitCount(int x) {
-/*
-  unsigned int y = x - ((x >> 1) & 0x55555555);
-  y = (y & 0x33333333) + ((y >> 2) & 0x33333333);
-  return (((y + (y >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
-*/
-  unsigned int y = (unsigned) x;
-  unsigned int z = (unsigned) x;
-  unsigned int maskOne = (((((0x55 << 8) | 0x55) << 8) | 0x55) << 8) | 0x55;
-  unsigned int maskTwo = (((((0x33 << 8) | 0x33) << 8) | 0x33) << 8) | 0x33;
-  unsigned int maskThree = (((((0x0F << 8) | 0x0F) << 8) | 0x0F) << 8) | 0x0F;
-  int result = 0;
-
-  y = (y & maskOne) + ((z >> 1) & maskOne);
-  z = y;
-  y = (y & maskTwo) + ((z >> 2) & maskTwo);
-  z = y;
-  y = (y & maskThree) + ((z >> 4) & maskThree);
-  result = y >> 24;
-
-  return result;  
+  return 2;
 }
 /* 
  * bang - Compute !x without using !
@@ -236,9 +223,9 @@ int bitCount(int x) {
  *   Rating: 4 
  */
 int bang(int x) {
-  int minus_x = ~x+1;
-  int bits = (minus_x | x) >> 31;
-  return bits + 1;
+  int invx = ~x;
+  int negx = invx + 1;
+  return ((~negx & invx) >> 31) & 1;
 }
 /* 
  * tmin - return minimum two's complement integer 
@@ -247,7 +234,7 @@ int bang(int x) {
  *   Rating: 1
  */
 int tmin(void) {
-  return 2;
+  return 1 << 31;
 }
 /* 
  * fitsBits - return 1 if x can be represented as an 
@@ -259,8 +246,7 @@ int tmin(void) {
  *   Rating: 2
  */
 int fitsBits(int x, int n) {
-  int mask = x >> 31;
-  return !(((~x & mask) + (x & ~mask)) >> (n + ~0));
+  return 2;
 }
 /* 
  * divpwr2 - Compute x/(2^n), for 0 <= n <= 30
@@ -271,7 +257,7 @@ int fitsBits(int x, int n) {
  *   Rating: 2
  */
 int divpwr2(int x, int n) {
-    return 2;
+    return (x + ((x >> 31) & ((1 << n) + ~0))) >> n;
 }
 /* 
  * negate - return -x 
@@ -281,7 +267,7 @@ int divpwr2(int x, int n) {
  *   Rating: 2
  */
 int negate(int x) {
-  return 2;
+  return ~x + 1;
 }
 /* 
  * isPositive - return 1 if x > 0, return 0 otherwise 
@@ -291,7 +277,7 @@ int negate(int x) {
  *   Rating: 3
  */
 int isPositive(int x) {
-  return 2;
+  return !((x & (1 << 31)) >> 31 | !x);
 }
 /* 
  * isLessOrEqual - if x <= y  then return 1, else return 0 
@@ -301,17 +287,29 @@ int isPositive(int x) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-	y = ~y + 1;
-	int result;
-	result = (x + y) ^ 1;
-	unsigned isPositive, isNegative, isNull;
-	isPositive = (((((0x7f << 8) ^ 0xff) << 8) ^ 0xff) << 8) ^ 0xff;
-	isNegative = 0x80 << 24;
-	isNull = 0x00;
+  int a = x;
+  int b = y;
+  int diff = a ^ b;
+  diff |= diff >> 1;
+  diff |= diff >> 2;
+  diff |= diff >> 4;
+  diff |= diff >> 8;
+  diff |= diff >> 16;
 
-	return (result & isPositive);
+  //1+ on GT, 0 otherwise.
+  diff &= ~(diff >> 1) | 0x80000000;
+  diff &= (a ^ 0x80000000) & (b ^ 0x7fffffff);
+
+  //flatten back to range of 0 or 1.
+  diff |= diff >> 1;
+  diff |= diff >> 2;
+  diff |= diff >> 4;
+  diff |= diff >> 8;
+  diff |= diff >> 16;
+  diff &= 1;
+
+  return diff;
 }
-
 /*
  * ilog2 - return floor(log base 2 of x), where x > 0
  *   Example: ilog2(16) = 4
@@ -320,7 +318,38 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4
  */
 int ilog2(int x) {
-  return 2;
+  int i, j, k, l, m;
+  x = x | (x >> 1);
+  x = x | (x >> 2);
+  x = x | (x >> 4);
+  x = x | (x >> 8);
+  x = x | (x >> 16);
+
+  // i = 0x55555555 
+  i = 0x55 | (0x55 << 8); 
+  i = i | (i << 16);
+
+  // j = 0x33333333 
+  j = 0x33 | (0x33 << 8);
+  j = j | (j << 16);
+
+  // k = 0x0f0f0f0f 
+  k = 0x0f | (0x0f << 8);
+  k = k | (k << 16);
+
+  // l = 0x00ff00ff 
+  l = 0xff | (0xff << 16);
+
+  // m = 0x0000ffff 
+  m = 0xff | (0xff << 8);
+
+  x = (x & i) + ((x >> 1) & i);
+  x = (x & j) + ((x >> 2) & j);
+  x = (x & k) + ((x >> 4) & k);
+  x = (x & l) + ((x >> 8) & l);
+  x = (x & m) + ((x >> 16) & m);
+  x = x + ~0;
+  return x;
 }
 /* 
  * float_neg - Return bit-level equivalent of expression -f for
@@ -334,7 +363,19 @@ int ilog2(int x) {
  *   Rating: 2
  */
 unsigned float_neg(unsigned uf) {
- return 2;
+  // Get exp
+  unsigned exp = (uf >> 23) & 0xFF;
+
+  // Get frac
+  unsigned frac = (uf << 9);
+
+  // Return NaN if NaN
+  if ((exp == 0xFF) && (frac) != 0) 
+  {
+    return uf;
+  }
+
+  return uf ^ (1 << 31);
 }
 /* 
  * float_i2f - Return bit-level equivalent of expression (float) x
@@ -360,5 +401,9 @@ unsigned float_i2f(int x) {
  *   Rating: 4
  */
 unsigned float_twice(unsigned uf) {
-  return 2;
+  // Get exp
+  unsigned exp = (uf >> 23) & 0xFF;
+
+  // Get frac
+  unsigned frac = (uf << 9);
 }
