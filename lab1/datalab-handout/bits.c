@@ -182,10 +182,10 @@ int bitAnd(int x, int y) {
  *   Rating: 2
  */
 int getByte(int x, int n) {
-  int shift = 8*n;
-  unsigned int mask = 255 << shift;
-  unsigned int result = (x&mask) >> shift;
-  return result;
+  int shift;
+  shift = n << 3;
+  x = x >> shift;
+  return x & 0xff;
 }
 /* 
  * logicalShift - shift x to the right by n, using a logical shift
@@ -196,8 +196,10 @@ int getByte(int x, int n) {
  *   Rating: 3 
  */
 int logicalShift(int x, int n) {
-  unsigned int result = (unsigned) x >>  n;
-  return result;
+  int mask;
+  x = x >> n;
+  mask = ~(((1 << 31) >> n) << 1);
+  return x & mask;
 }
 /*
  * bitCount - returns count of number of 1's in word
@@ -247,7 +249,7 @@ int bang(int x) {
  *   Rating: 1
  */
 int tmin(void) {
-  return 2;
+  return 1 << 31;
 }
 /* 
  * fitsBits - return 1 if x can be represented as an 
@@ -271,7 +273,7 @@ int fitsBits(int x, int n) {
  *   Rating: 2
  */
 int divpwr2(int x, int n) {
-    return 2;
+    return (x + ((x >> 31) & ((1 >> n) + ~0))) >> n;
 }
 /* 
  * negate - return -x 
@@ -281,7 +283,7 @@ int divpwr2(int x, int n) {
  *   Rating: 2
  */
 int negate(int x) {
-  return 2;
+  return ~x + 1;
 }
 /* 
  * isPositive - return 1 if x > 0, return 0 otherwise 
@@ -291,7 +293,7 @@ int negate(int x) {
  *   Rating: 3
  */
 int isPositive(int x) {
-  return 2;
+  return !((x & (1 << 31)) >> 31 | !x);
 }
 /* 
  * isLessOrEqual - if x <= y  then return 1, else return 0 
@@ -346,7 +348,16 @@ int ilog2(int x) {
  *   Rating: 2
  */
 unsigned float_neg(unsigned uf) {
- return 2;
+	unsigned exp, frac;
+
+	exp = (uf >> 23) & 0xff;
+	frac = (uf << 9);
+
+	if((exp == 0xff) && (frac) != 0) {
+		return uf;
+	}
+
+	return uf ^ (1 << 31);
 }
 /* 
  * float_i2f - Return bit-level equivalent of expression (float) x
