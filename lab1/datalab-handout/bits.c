@@ -203,6 +203,7 @@ int logicalShift(int x, int n) {
   // Build a mask 0(n)1(31-n)
   int mask = ~(((1 << 31) >> n) << 1);
   // Convert the first n bits to zero by ANDing with mask
+
   return x & mask;
 }
 /*
@@ -257,7 +258,7 @@ int fitsBits(int x, int n) {
  *   Rating: 2
  */
 int divpwr2(int x, int n) {
-    return (x + ((x >> 31) & ((1 << n) + ~0))) >> n;
+  return (x + ((x >> 31) & ((1 << n) + ~0))) >> n;
 }
 /* 
  * negate - return -x 
@@ -287,28 +288,27 @@ int isPositive(int x) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-  int a = x;
-  int b = y;
-  int diff = a ^ b;
-  diff |= diff >> 1;
-  diff |= diff >> 2;
-  diff |= diff >> 4;
-  diff |= diff >> 8;
-  diff |= diff >> 16;
+	/*y = ~y + 1;
+	int result;
+	result = (x + y) ^ 1;
+	int isPositive, isNegative, isNull;
+	isNull = 0x00;
 
-  //1+ on GT, 0 otherwise.
-  diff &= ~(diff >> 1) | 0x80000000;
-  diff &= (a ^ 0x80000000) & (b ^ 0x7fffffff);
+	return ((result & isPositive) & 0) | ((result & isNegative) & 1) | ((result & isNull) ^ 1);
+	*/
+	int diff = x ^ y;
+	int isPositive = (((((0x7f << 8) ^ 0xff) << 8) ^ 0xff) << 8) ^ 0xff;
+	int isNegative = 0x80 << 24;
+	diff |= diff >> 1;
+	diff |= diff >> 2;
+	diff |= diff >> 4;
+	diff |= diff >> 8;
+	diff |= diff >> 16;
 
-  //flatten back to range of 0 or 1.
-  diff |= diff >> 1;
-  diff |= diff >> 2;
-  diff |= diff >> 4;
-  diff |= diff >> 8;
-  diff |= diff >> 16;
-  diff &= 1;
-
-  return diff;
+	diff &= ~(diff >> 1) | isNegative;
+	diff &= (x ^ isNegative) & (y ^ isPositive);
+	
+	return !diff;
 }
 /*
  * ilog2 - return floor(log base 2 of x), where x > 0
