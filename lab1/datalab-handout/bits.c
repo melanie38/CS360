@@ -301,15 +301,27 @@ int isPositive(int x) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-	y = ~y + 1;
+	/*y = ~y + 1;
 	int result;
 	result = (x + y) ^ 1;
-	unsigned isPositive, isNegative, isNull;
-	isPositive = (((((0x7f << 8) ^ 0xff) << 8) ^ 0xff) << 8) ^ 0xff;
-	isNegative = 0x80 << 24;
+	int isPositive, isNegative, isNull;
 	isNull = 0x00;
 
-	return (result & isPositive);
+	return ((result & isPositive) & 0) | ((result & isNegative) & 1) | ((result & isNull) ^ 1);
+	*/
+	int diff = x ^ y;
+	int isPositive = (((((0x7f << 8) ^ 0xff) << 8) ^ 0xff) << 8) ^ 0xff;
+	int isNegative = 0x80 << 24;
+	diff |= diff >> 1;
+	diff |= diff >> 2;
+	diff |= diff >> 4;
+	diff |= diff >> 8;
+	diff |= diff >> 16;
+
+	diff &= ~(diff >> 1) | isNegative;
+	diff &= (x ^ isNegative) & (y ^ isPositive);
+	
+	return !diff;
 }
 
 /*
