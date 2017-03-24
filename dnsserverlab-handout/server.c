@@ -6,6 +6,7 @@
 #include<errno.h>
 #include<time.h>
 #include<string.h>
+#include <netdb.h>
 
 #include "dns.h"
 
@@ -40,57 +41,72 @@ void init_db() {
 	 * OUTPUT: None
 	 */
 
-	 FILE *pfile = fopen(cachedb_file,"r");
+	FILE *pfile = fopen(cachedb_file,"r");
 
-	 char *ename = malloc(32);
-	 int ttl;
-	 char *eclass = malloc(2);
-	 char *etype = malloc(2);
-	 char *erdata = malloc(512);
+	char *ename = malloc(32);
+	int ttl;
+	char *eclass = malloc(2);
+	char *etype = malloc(2);
+	char *erdata = malloc(512);
 
-	 int index = 0;
-	 cachedb_start = time(NULL);
+	int index = 0;
+	cachedb_start = time(NULL);
+	
+	// Set all entries of the db to 0
+	for (int i = 0; i < MAX_ENTRIES; i++) {
+		dns_db_entry init;
+		init.expires = 0;
+		init.rr.name = "none";
 
-	 while(fscanf(pfile, "%s %d %s %s %s", ename, &ttl, eclass, etype, erdata) == 5) {
+		cachedb[i] = init;
+	}
+	int i = 0;
+	while(fscanf(pfile, "%s %d %s %s %s", ename, &ttl, eclass, etype, erdata) == 5) {
 
-		 char *name = malloc(32);
-	 	 char *rdata = malloc(512);
-		 char *type = malloc(2);
+		// Converts rdata from string to bytes
+	   	inet_pton(AF_INET, erdata, erdata);
 
-	 	 name = ename;
-	 	 rdata = erdata;
-		 type = etype;
+	 	// Insert entry in cache
+	 	cachedb[index].rr.name = ename;
+	 	cachedb[index].rr.ttl = ttl;
+	 	cachedb[index].rr.class = 1;
+	 	cachedb[index].rr.type = etype;
+	 	cachedb[index].rr.rdata = erdata;
 
-		 // Converts rdata from string to bytes
-	   inet_pton(AF_INET, rdata, rdata);
-	 	 // Create the db entry
-	 	 dns_rr rr;
+	 	index++;
+		//printf("%s %d %s\n", name, ttl, type);
+		//print_bytes(rdata, strlen(rdata));
+		ename = malloc(32);
+	 	erdata = malloc(512);
+		etype = malloc(2);
+	}
 
-	 	 rr.name = name;
-		 rr.ttl = ttl; // use expires to invalidate entries that are too old
-	 	 rr.class = 1;
-	 	 rr.type = type; // make sure its 1 if type is A, 5 if type is CNAME
-	 	 rr.rdata = rdata;
-
-		 dns_db_entry entry;
-	 	 entry.rr = rr;
-
-	 	 // Insert entry in cache
-	 	 cachedb[index] = entry;
-
-	 	 index++;
-		 //printf("%s %d %s\n", name, ttl, type);
-		 //print_bytes(rdata, strlen(rdata));
-	 }
-/*
-	 for(int i = 0; i < strlen(cachedb); i++) {
+	for(int i = 0; i < 5; i++) {
 	 	printf("%s\n", cachedb[i].rr.name);
-	 }
-*/
+	}
+
 
 }
+int search_db(dns_rr request) {
 
-int is_valid_request(unsigned char *request) {
+	for (int i = 0; i < MAX_ENTRIES; i++) {
+		//printf("%s\n", request.name);
+		//if (cachedb[i].expires - time(NULL) > 0) {
+			if (strcmp(cachedb[i].rr.name, request.name) == 0) {
+				//if(cachedb[i].rr.type == request.type) {
+					printf("a match is found!\n");
+					return 1;
+				//}
+			}
+		//}
+		//printf("ttl: %d\n", cachedb[i].expires);
+		//printf("name: %s\n", cachedb[i].rr.name);
+		//printf("type: %d\n", cachedb[i].rr.type);
+	}
+	printf("no match found in db\n");
+	return 0;
+}
+int is_valid_request(unsigned char *request, int req_length) {
 	/*
 	 * Check that the request received is a valid query.
 	 *
@@ -102,6 +118,23 @@ int is_valid_request(unsigned char *request) {
 	 *                  query), or if there are no questions in the query
 	 *                  (question count != 1).
 	 */
+	
+	//print_bytes(request, req_length);
+	
+	int QR_flag_opcode;
+	int question;
+	
+	QR_flag_opcode = request[2];
+	question = request[5];
+	
+	//printf("%d\n", QR_flag_opcode);
+	//printf("%d\n", question);
+	
+	if(QR_flag_opcode > 4095 || question != 1) {
+		return 0;
+	}
+	
+	return 1;
 }
 
 dns_rr get_question(unsigned char *request) {
@@ -112,6 +145,47 @@ dns_rr get_question(unsigned char *request) {
 	 *                  request received by the server.
 	 * OUTPUT: a dns_rr structure for the question.
 	 */
+	
+	//print_bytes(request, strlen(request));
+	
+	dns_rr rr;
+
+	int i = 12;
+	int j = request[12];
+	int l = 0;
+	int name_length = strlen(request + 13);
+	
+	//printf("%d\n", name_length);
+	
+	char temp[name_length];
+
+	while(request[i] != 0) {
+		i++;
+		for (int k = 0; k < j; k++) {
+			temp[l] = request[i];
+			i++;
+			l++;
+		}
+		
+		j = request[i];
+		if (j != 0) {
+			temp[l] = '.';
+			l++;
+		}
+		
+		//printf("%s\n", temp);
+		//printf("%c\n", request[i]);
+	}
+	
+	rr.name = temp;
+	rr.type = request[i + 2];
+	rr.class = request[i + 4];
+	
+	printf("%s\n", rr.name);
+	//printf("%d\n", rr.type);
+	//printf("%d\n", rr.class);
+	
+	return rr;
 }
 
 int get_response(unsigned char *request, int len, unsigned char *response) {
@@ -161,7 +235,7 @@ int get_response(unsigned char *request, int len, unsigned char *response) {
 	 */
 }
 
-void serve_udp(unsigned short port) {
+void serve_udp(char* port) {
 	/*
 	 * Listen for and respond to DNS requests over UDP.
 	 * Initialize the cache.  Initialize the socket.  Receive datagram
@@ -171,40 +245,117 @@ void serve_udp(unsigned short port) {
 	 * INPUT:  port: a numerical port on which the server should listen.
 	 */
 
-	 init_db();
-	 puts("cache is created");
+	init_db();
+	//puts("cache is created");
 
-	 struct sockaddr_in sock_server, sock_client;
-	 char buf[BUFSIZ];
+	int sock = create_server_socket(port, SOCK_DGRAM);
+	char message[BUFFER_MAX];
+	char client_hostname[NI_MAXHOST];
+	char client_port[NI_MAXSERV];
+	
+	printf("Listening on UDP port %s\n", port);
+	
+	while (1) {
+		struct sockaddr_storage client_addr;
+		int msg_length;
+		socklen_t client_addr_len = sizeof(client_addr);
+		
+		// Receive a message from a client
+		if ((msg_length = recvfrom(sock, message, BUFFER_MAX, 0, (struct sockaddr*)&client_addr, &client_addr_len)) < 0) {
+			fprintf(stderr, "Failed in recvfrom\n");
+			continue;
+		}
+		
+		is_valid_request(message, msg_length);
+		search_db(get_question(message));
+		
+		// Get and print the address of the peer (for fun)
+		int ret = getnameinfo((struct sockaddr*)&client_addr, client_addr_len,
+							  client_hostname, BUFFER_MAX, client_port, BUFFER_MAX, 0);
+		if (ret != 0) {
+			fprintf(stderr, "Failed in getnameinfo: %s\n", gai_strerror(ret));
+		}
+		printf("Got a message from %s:%s\n", client_hostname, client_port);
+		
+		// Just echo the message back to the client
+		sendto(sock, message, msg_length, 0, (struct sockaddr*)&client_addr, client_addr_len);
+	}
+}
 
-	 int sock = socket(AF_INET, SOCK_DGRAM, 0);
-
-	 if (sock < 0) {
-		 perror("Cannot create socket");
-		 return 0;
-	 }
-	 puts("Socket created!");
-
-	 memset((char*) &sock_server, 0, sizeof sock_server);
-	 memset((char*) &sock_client, 0, sizeof sock_client);
-
-	 sock_server.sin_family = AF_INET;
-	 sock_server.sin_port = htons(53);
-	 sock_server.sin_addr.s_addr = inet_addr("5888");
-
-	 if (connect(sock, (struct sockaddr*) &sock_server, sizeof sock_server) < 0) {
-		 perror("Connection failed");
-		 exit(4);
-	 }
-	 puts("Connected!");
-
-	 //send(sock, request, requestlen, 0);
-	 //puts("Request sent:");
-	 //print_bytes(request, requestlen);
-
-	 //int reslen = recv(sock, response, 512, 0);
-	 //puts("Answer recieved:");
-	 //print_bytes(response, reslen);
+int create_server_socket(char* port, int protocol) {
+	int sock;
+	int ret;
+	int optval = 1;
+	struct addrinfo hints;
+	struct addrinfo* addr_ptr;
+	struct addrinfo* addr_list;
+	
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = protocol;
+	/* AI_PASSIVE for filtering out addresses on which we
+	 * can't use for servers
+	 *
+	 * AI_ADDRCONFIG to filter out address types the system
+	 * does not support
+	 *
+	 * AI_NUMERICSERV to indicate port parameter is a number
+	 * and not a string
+	 *
+	 * */
+	hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG | AI_NUMERICSERV;
+	/*
+	 *  On Linux binding to :: also binds to 0.0.0.0
+	 *  Null is fine for TCP, but UDP needs both
+	 *  See https://blog.powerdns.com/2012/10/08/on-binding-datagram-udp-sockets-to-the-any-addresses/
+	 */
+	ret = getaddrinfo(protocol == SOCK_DGRAM ? "::" : NULL, port, &hints, &addr_list);
+	if (ret != 0) {
+		fprintf(stderr, "Failed in getaddrinfo: %s\n", gai_strerror(ret));
+		exit(EXIT_FAILURE);
+	}
+	
+	for (addr_ptr = addr_list; addr_ptr != NULL; addr_ptr = addr_ptr->ai_next) {
+		sock = socket(addr_ptr->ai_family, addr_ptr->ai_socktype, addr_ptr->ai_protocol);
+		if (sock == -1) {
+			perror("socket");
+			continue;
+		}
+		
+		// Allow us to quickly reuse the address if we shut down (avoiding timeout)
+		ret = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
+		if (ret == -1) {
+			perror("setsockopt");
+			close(sock);
+			continue;
+		}
+		
+		ret = bind(sock, addr_ptr->ai_addr, addr_ptr->ai_addrlen);
+		if (ret == -1) {
+			perror("bind");
+			close(sock);
+			continue;
+		}
+		break;
+	}
+	freeaddrinfo(addr_list);
+	if (addr_ptr == NULL) {
+		fprintf(stderr, "Failed to find a suitable address for binding\n");
+		exit(EXIT_FAILURE);
+	}
+	
+	if (protocol == SOCK_DGRAM) {
+		return sock;
+	}
+	// Turn the socket into a listening socket if TCP
+	ret = listen(sock, LISTEN_QUEUE_SIZE);
+	if (ret == -1) {
+		perror("listen");
+		close(sock);
+		exit(EXIT_FAILURE);
+	}
+	
+	return sock;
 }
 
 void serve_tcp(unsigned short port) {
@@ -229,7 +380,8 @@ void serve_tcp(unsigned short port) {
 }
 
 int main(int argc, char *argv[]) {
-	unsigned short port;
+	//unsigned short port;
+	char* port = malloc(16);
 	int argindex = 1, daemonize = 0;
 	if (argc < 3) {
 		fprintf(stderr, "Usage: %s [-d] <cache file> <port>\n", argv[0]);
@@ -244,7 +396,8 @@ int main(int argc, char *argv[]) {
 		daemonize = 1;
 	}
 	cachedb_file = argv[argindex++];
-	port = atoi(argv[argindex]);
+	//port = atoi(argv[argindex]);
+	port = argv[argindex];
 
 	// daemonize, if specified, and start server(s)
 	// ...
