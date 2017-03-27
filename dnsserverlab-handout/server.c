@@ -46,12 +46,12 @@ void init_db() {
 	char *ename = malloc(32);
 	int ttl;
 	char *eclass = malloc(2);
-	char *etype = malloc(2);
+	char *etype = malloc(32);
 	char *erdata = malloc(512);
+	short type;// = malloc(2);
 
 	int index = 0;
-	cachedb_start = time(NULL);
-	
+
 	// Set all entries of the db to 0
 	for (int i = 0; i < MAX_ENTRIES; i++) {
 		dns_db_entry init;
@@ -60,53 +60,68 @@ void init_db() {
 
 		cachedb[i] = init;
 	}
-	int i = 0;
+
+	cachedb_start = time(NULL);
+
 	while(fscanf(pfile, "%s %d %s %s %s", ename, &ttl, eclass, etype, erdata) == 5) {
 
+		cachedb[index].rr.rdata_len = strlen(erdata);
 		// Converts rdata from string to bytes
 	   	inet_pton(AF_INET, erdata, erdata);
 
+	   	// Converts type to int
+	   	if(strcmp(etype, "A") == 0) {
+	   		type = 1;	   	}
+	   	else if(strcmp(etype, "CNAME") == 0) {
+	   		type = 5;	   	}
+	   	else if(strcmp(etype, "TXT") == 0) {
+	   		type = 16;	   	}
+
+	   	//printf("the type will be %s\n", etype);
+
 	 	// Insert entry in cache
 	 	cachedb[index].rr.name = ename;
-	 	cachedb[index].rr.ttl = ttl;
+	 	//cachedb[index].rr.ttl = ttl;
 	 	cachedb[index].rr.class = 1;
-	 	cachedb[index].rr.type = etype;
+	 	cachedb[index].rr.type = type;
 	 	cachedb[index].rr.rdata = erdata;
+	 	cachedb[index].expires = cachedb_start + ttl;
+
+	 	//printf("%s %u\n", cachedb[index].rr.name, cachedb[index].rr.type);
 
 	 	index++;
-		//printf("%s %d %s\n", name, ttl, type);
 		//print_bytes(rdata, strlen(rdata));
 		ename = malloc(32);
 	 	erdata = malloc(512);
-		etype = malloc(2);
+		etype = malloc(32);
+		//type = malloc(2);
+
+		//printf("%s %d\n", cachedb[index].rr.name, cachedb[index].rr.type);
 	}
 
 	for(int i = 0; i < 5; i++) {
-	 	printf("%s\n", cachedb[i].rr.name);
+	 	printf("%s %u\n", cachedb[i].rr.name, cachedb[i].rr.rdata_len);
 	}
-
 
 }
 int search_db(dns_rr request) {
 
 	for (int i = 0; i < MAX_ENTRIES; i++) {
-		//printf("%s\n", request.name);
-		//if (cachedb[i].expires - time(NULL) > 0) {
-			if (strcmp(cachedb[i].rr.name, request.name) == 0) {
-				//if(cachedb[i].rr.type == request.type) {
+		if (strcmp(cachedb[i].rr.name, request.name) == 0) {
+			if (cachedb[i].expires - time(NULL) > 0) {
+				if(cachedb[i].rr.type == request.type) {
 					printf("a match is found!\n");
-					return 1;
-				//}
+					return i;
+				}
 			}
-		//}
-		//printf("ttl: %d\n", cachedb[i].expires);
+		}
 		//printf("name: %s\n", cachedb[i].rr.name);
 		//printf("type: %d\n", cachedb[i].rr.type);
 	}
 	printf("no match found in db\n");
-	return 0;
+	return -1;
 }
-int is_valid_request(unsigned char *request, int req_length) {
+int is_valid_request(unsigned char *request) {
 	/*
 	 * Check that the request received is a valid query.
 	 *
@@ -145,9 +160,7 @@ dns_rr get_question(unsigned char *request) {
 	 *                  request received by the server.
 	 * OUTPUT: a dns_rr structure for the question.
 	 */
-	
-	//print_bytes(request, strlen(request));
-	
+
 	dns_rr rr;
 
 	int i = 12;
@@ -157,7 +170,8 @@ dns_rr get_question(unsigned char *request) {
 	
 	//printf("%d\n", name_length);
 	
-	char temp[name_length];
+	char temp[name_length + 1];
+	//printf("%s\n", temp);
 
 	while(request[i] != 0) {
 		i++;
@@ -165,23 +179,25 @@ dns_rr get_question(unsigned char *request) {
 			temp[l] = request[i];
 			i++;
 			l++;
+			//printf("%s\n", temp);
 		}
 		
 		j = request[i];
 		if (j != 0) {
 			temp[l] = '.';
 			l++;
+			//printf("%s\n", temp);
 		}
-		
-		//printf("%s\n", temp);
-		//printf("%c\n", request[i]);
 	}
-	
+
+	temp[l] = '\0';
+	//printf("%s\n", temp);
+
 	rr.name = temp;
 	rr.type = request[i + 2];
 	rr.class = request[i + 4];
-	
-	printf("%s\n", rr.name);
+
+	//printf("%s\n", rr.name);
 	//printf("%d\n", rr.type);
 	//printf("%d\n", rr.class);
 	
@@ -233,6 +249,81 @@ int get_response(unsigned char *request, int len, unsigned char *response) {
 	 *                  message should be constructed.
 	 * OUTPUT: the length of the response message.
 	 */
+
+	int valid = is_valid_request(request);
+
+/*	if(valid) {
+		printf("request is valid\n");
+	}
+	else {
+		printf("request is not valid\n");
+	}
+*/
+	// copy ID from request to response
+	response[0] = request[0];
+	response[1] = request[1];
+	// clear all flags and codes
+	// set QR code to 1
+	response[2] = 0x80;
+
+	if(!valid) {
+		// set response code to 1 (FORMERR)
+		response[3] = 0x01;
+		// set all section counts to 0
+		int i = 4;
+		while(i < 12) {
+			response[i] = 0x00;
+			i++;
+		}
+		// return the length of the header (12)
+		return i;
+	}
+
+	// set Rcode to 0
+	response[3] = 0x00;
+	// set Total Questions to 1
+	response[4] = 0x00;
+	response[5] = 0x01;
+	// set Authority RR's and Additional RR's to 0
+	int i = 8;
+	while(i < 12) {
+		response[i] = 0x00;
+		i++;
+	}
+	// copy question section from request
+	while(request[i] != 0) {
+		response[i] = request[i];
+		i++;
+	}
+	// set the last bit of the name to 0 (end of string)
+	response[i] = 0x00;
+	i++;
+
+	int index = search_db(get_question(request));
+	if(index == -1) {
+		// set the response code to 3 (NXDOMAIN)
+		response[3] = 0x03;
+		// set the answer count to 0
+		response[7] = 0x00;
+		//print_bytes(response, i);
+		return 0;
+	}
+	else {
+		dns_rr rr = cachedb[index].rr;
+		// set the answer count to 1
+		response[7] = 0x01;
+
+		// add appropriate RR
+		char* rdata = rr.rdata;
+		for(int j = 0; j < rr.rdata_len; j++) {
+			response[i + j] = rdata[j];
+		}
+	}
+
+	print_bytes(cachedb[index].rr.rdata, cachedb[index].rr.rdata_len);
+	print_bytes(response, i + cachedb[index].rr.rdata_len);
+
+	return 0;
 }
 
 void serve_udp(char* port) {
@@ -254,6 +345,8 @@ void serve_udp(char* port) {
 	char client_port[NI_MAXSERV];
 	
 	printf("Listening on UDP port %s\n", port);
+
+	char response[BUFFER_MAX];
 	
 	while (1) {
 		struct sockaddr_storage client_addr;
@@ -266,9 +359,10 @@ void serve_udp(char* port) {
 			continue;
 		}
 		
-		is_valid_request(message, msg_length);
-		search_db(get_question(message));
+		//is_valid_request(message, msg_length);
 		
+		get_response(message, msg_length, response);
+
 		// Get and print the address of the peer (for fun)
 		int ret = getnameinfo((struct sockaddr*)&client_addr, client_addr_len,
 							  client_hostname, BUFFER_MAX, client_port, BUFFER_MAX, 0);
