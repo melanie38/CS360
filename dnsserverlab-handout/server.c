@@ -65,17 +65,20 @@ void init_db() {
 
 	while(fscanf(pfile, "%s %d %s %s %s", ename, &ttl, eclass, etype, erdata) == 5) {
 
-		cachedb[index].rr.rdata_len = strlen(erdata);
-		// Converts rdata from string to bytes
-	   	inet_pton(AF_INET, erdata, erdata);
-
 	   	// Converts type to int
 	   	if(strcmp(etype, "A") == 0) {
-	   		type = 1;	   	}
+	   		type = 1;
+	   		// Converts rdata from string to bytes
+	   		inet_pton(AF_INET, erdata, erdata);
+	   		cachedb[index].rr.rdata_len = 4; 	
+	   	}
 	   	else if(strcmp(etype, "CNAME") == 0) {
-	   		type = 5;	   	}
+	   		type = 5;	   	
+	   	}
 	   	else if(strcmp(etype, "TXT") == 0) {
-	   		type = 16;	   	}
+	   		type = 16;
+	   		cachedb[index].rr.rdata_len = strlen(erdata); 	
+	   	}
 
 	   	//printf("the type will be %s\n", etype);
 
@@ -90,7 +93,7 @@ void init_db() {
 	 	//printf("%s %u\n", cachedb[index].rr.name, cachedb[index].rr.type);
 
 	 	index++;
-		//print_bytes(rdata, strlen(rdata));
+		//print_bytes(cachedb[index].rr.rdata, 1024);
 		ename = malloc(32);
 	 	erdata = malloc(512);
 		etype = malloc(32);
@@ -98,11 +101,11 @@ void init_db() {
 
 		//printf("%s %d\n", cachedb[index].rr.name, cachedb[index].rr.type);
 	}
-
+/*
 	for(int i = 0; i < 5; i++) {
 	 	printf("%s %u\n", cachedb[i].rr.name, cachedb[i].rr.rdata_len);
 	}
-
+*/
 }
 int search_db(dns_rr request) {
 
@@ -110,7 +113,7 @@ int search_db(dns_rr request) {
 		if (strcmp(cachedb[i].rr.name, request.name) == 0) {
 			if (cachedb[i].expires - time(NULL) > 0) {
 				if(cachedb[i].rr.type == request.type) {
-					printf("a match is found!\n");
+					//printf("a match is found!\n");
 					return i;
 				}
 			}
@@ -118,7 +121,7 @@ int search_db(dns_rr request) {
 		//printf("name: %s\n", cachedb[i].rr.name);
 		//printf("type: %d\n", cachedb[i].rr.type);
 	}
-	printf("no match found in db\n");
+	//printf("no match found in db\n");
 	return -1;
 }
 int is_valid_request(unsigned char *request) {
@@ -263,8 +266,8 @@ int get_response(unsigned char *request, int len, unsigned char *response) {
 	response[0] = request[0];
 	response[1] = request[1];
 	// clear all flags and codes
-	// set QR code to 1
-	response[2] = 0x80;
+	// set QR code to 1, RD flag similar to request
+	response[2] = request[2];
 
 	if(!valid) {
 		// set response code to 1 (FORMERR)
@@ -300,6 +303,10 @@ int get_response(unsigned char *request, int len, unsigned char *response) {
 	i++;
 
 	int index = search_db(get_question(request));
+	dns_rr rr = cachedb[index].rr;
+	time_t expires = cachedb[index].expires;
+
+	// if no entry in the database match the name and type or is expired
 	if(index == -1) {
 		// set the response code to 3 (NXDOMAIN)
 		response[3] = 0x03;
@@ -309,21 +316,33 @@ int get_response(unsigned char *request, int len, unsigned char *response) {
 		return 0;
 	}
 	else {
-		dns_rr rr = cachedb[index].rr;
 		// set the answer count to 1
 		response[7] = 0x01;
+		// set type of request
+		i++;
+		response[i] = rr.type;
+		i++;
+		// set class of request
+		i++;
+		response[i] = rr.class;
+		i++;
+		// set ttl (4 bytes)
+		rr.ttl = expires - time(NULL);
+		printf("%d\n", rr.ttl);
+   		memcpy(response + i, &rr.ttl, 4);
 
+		// set rdata_len (2 bytes)
+		i += 4 + 1;
+		response[i] = rr.rdata_len;
+		i++;
 		// add appropriate RR
-		char* rdata = rr.rdata;
-		for(int j = 0; j < rr.rdata_len; j++) {
-			response[i + j] = rdata[j];
-		}
+		memcpy(response + i, &rr.rdata, rr.rdata_len);
 	}
 
 	print_bytes(cachedb[index].rr.rdata, cachedb[index].rr.rdata_len);
-	print_bytes(response, i + cachedb[index].rr.rdata_len);
+	print_bytes(response, i + rr.rdata_len);
 
-	return 0;
+	return i + rr.rdata_len;
 }
 
 void serve_udp(char* port) {
@@ -361,7 +380,7 @@ void serve_udp(char* port) {
 		
 		//is_valid_request(message, msg_length);
 		
-		get_response(message, msg_length, response);
+		int res_len = get_response(message, msg_length, response);
 
 		// Get and print the address of the peer (for fun)
 		int ret = getnameinfo((struct sockaddr*)&client_addr, client_addr_len,
@@ -372,7 +391,8 @@ void serve_udp(char* port) {
 		printf("Got a message from %s:%s\n", client_hostname, client_port);
 		
 		// Just echo the message back to the client
-		sendto(sock, message, msg_length, 0, (struct sockaddr*)&client_addr, client_addr_len);
+		//sendto(sock, message, msg_length, 0, (struct sockaddr*)&client_addr, client_addr_len);
+		sendto(sock, response, res_len, 0, (struct sockaddr*)&client_addr, client_addr_len);
 	}
 }
 
