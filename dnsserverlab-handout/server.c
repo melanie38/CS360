@@ -314,33 +314,57 @@ int get_response(unsigned char *request, int len, unsigned char *response) {
 		// set the answer count to 0
 		response[7] = 0x00;
 		//print_bytes(response, i);
-		return 0;
+		return i;
 	}
 	else {
 		// set the answer count to 1
 		response[7] = 0x01;
 		// set type of request
+		for(int j = 0; j < 4; j++) {
+			response[i] = request[i];
+			i++;
+		}
+		// set class of request
+
+		// set name
+		response[i] = 0xc0;
+		i++;
+		response[i] = 0x0c;
+		i++;
+		// set type
+		response[i] = 0x00;
 		i++;
 		response[i] = rr.type;
 		i++;
-		// set class of request
+		// set class
+		response[i] = 0x00;
 		i++;
 		response[i] = rr.class;
 		i++;
 		// set ttl (4 bytes)
-		rr.ttl = htons(expires - time(NULL));
-		printf("%d\n", rr.ttl);
-   		memcpy(response + i, &rr.ttl, sizeof(rr.ttl));
-   		i += sizeof(rr.ttl);
+		response[i] = 0x00;
+		i++;
+		response[i] = 0x00;
+		i++;
+		response[i] = 0x00;
+		i++;
+		response[i] = expires - time(NULL);
+		i++;
+		// rr.ttl = ((expires - time(NULL))) | 0x00000000;
+  		// memcpy(response + i, &rr.ttl, sizeof(rr.ttl));
+  		// i += sizeof(rr.ttl);
 
 		// set rdata_len (2 bytes)
+		response[i] = 0x00;
+		i++;
 		memcpy(response + i, &rr.rdata_len, 2);
 		i++;
 		// add appropriate RR
 		memcpy(response + i, &rr.rdata, rr.rdata_len);
 	}
 
-	print_bytes(cachedb[index].rr.rdata, cachedb[index].rr.rdata_len);
+	//print_bytes(cachedb[index].rr.rdata, cachedb[index].rr.rdata_len);
+	//print_bytes(request, len);
 	print_bytes(response, i + rr.rdata_len);
 
 	return i + rr.rdata_len;
@@ -365,8 +389,6 @@ void serve_udp(char* port) {
 	char client_port[NI_MAXSERV];
 	
 	printf("Listening on UDP port %s\n", port);
-
-	char response[BUFFER_MAX];
 	
 	while (1) {
 		struct sockaddr_storage client_addr;
@@ -380,7 +402,7 @@ void serve_udp(char* port) {
 		}
 		
 		//is_valid_request(message, msg_length);
-		
+		char response[BUFFER_MAX];
 		int res_len = get_response(message, msg_length, response);
 
 		// Get and print the address of the peer (for fun)
