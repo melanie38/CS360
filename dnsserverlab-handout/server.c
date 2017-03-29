@@ -267,7 +267,7 @@ int get_response(unsigned char *request, int len, unsigned char *response) {
 	response[1] = request[1];
 	// clear all flags and codes
 	// set QR code to 1, RD flag similar to request
-	response[2] = request[2];
+	response[2] = 0x81; //request[2];
 
 	if(!valid) {
 		// set response code to 1 (FORMERR)
@@ -298,6 +298,7 @@ int get_response(unsigned char *request, int len, unsigned char *response) {
 		response[i] = request[i];
 		i++;
 	}
+
 	// set the last bit of the name to 0 (end of string)
 	response[i] = 0x00;
 	i++;
@@ -327,13 +328,13 @@ int get_response(unsigned char *request, int len, unsigned char *response) {
 		response[i] = rr.class;
 		i++;
 		// set ttl (4 bytes)
-		rr.ttl = expires - time(NULL);
+		rr.ttl = htons(expires - time(NULL));
 		printf("%d\n", rr.ttl);
-   		memcpy(response + i, &rr.ttl, 4);
+   		memcpy(response + i, &rr.ttl, sizeof(rr.ttl));
+   		i += sizeof(rr.ttl);
 
 		// set rdata_len (2 bytes)
-		i += 4 + 1;
-		response[i] = rr.rdata_len;
+		memcpy(response + i, &rr.rdata_len, 2);
 		i++;
 		// add appropriate RR
 		memcpy(response + i, &rr.rdata, rr.rdata_len);
