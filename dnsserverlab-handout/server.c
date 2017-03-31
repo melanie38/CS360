@@ -73,7 +73,8 @@ void init_db() {
 	   		cachedb[index].rr.rdata_len = 4; 	
 	   	}
 	   	else if(strcmp(etype, "CNAME") == 0) {
-	   		type = 5;	   	
+	   		type = 5;
+	   		cachedb[index].rr.rdata_len = strlen(erdata);   	
 	   	}
 	   	else if(strcmp(etype, "TXT") == 0) {
 	   		type = 16;
@@ -103,19 +104,54 @@ void init_db() {
 	}
 /*
 	for(int i = 0; i < 5; i++) {
-	 	printf("%s %u\n", cachedb[i].rr.name, cachedb[i].rr.rdata_len);
+	 	printf("%s %u\n", cachedb[i].rr.name, cachedb[i].rr.type);
 	}
 */
 }
-int search_db(dns_rr request) {
-
+int search_db_cname(dns_rr request) {
 	for (int i = 0; i < MAX_ENTRIES; i++) {
+		//printf("%s %s\n", request.name, cachedb[i].rr.name);
 		if (strcmp(cachedb[i].rr.name, request.name) == 0) {
 			if (cachedb[i].expires - time(NULL) > 0) {
-				if(cachedb[i].rr.type == request.type) {
-					//printf("a match is found!\n");
+				//printf("%s %s\n", request.name, cachedb[i].rr.name);
+			//	if(cachedb[i].rr.type != 5 || request.type != 5) {
+				//	if(cachedb[i].rr.type == request.type) {
+						//printf("%s %s\n", request.name, cachedb[i].rr.name);
+						//printf("%u\n", cachedb[1].rr.type);
+						return i;
+				//	}
+			/*	}
+				else {
+					//printf("%u\n", cachedb[1].rr.type);
 					return i;
 				}
+			*/
+			}
+		}
+		//printf("name: %s\n", cachedb[i].rr.name);
+		//printf("type: %d\n", cachedb[i].rr.type);
+	}
+	//printf("no match found in db\n");
+	return -1;
+}
+int search_db(dns_rr request) {
+	for (int i = 0; i < MAX_ENTRIES; i++) {
+		if (strcmp(cachedb[i].rr.name, request.name) == 0) {
+			if(cachedb[i].rr.type == request.type) {
+				//printf("%s %s\n", request.name, cachedb[i].rr.name);
+			//	if(cachedb[i].rr.type != 5 || request.type != 5) {
+					if (cachedb[i].expires - time(NULL) > 0) {
+						//printf("%s %s\n", request.name, cachedb[i].rr.name);
+						//printf("%u\n", cachedb[1].rr.type);
+						return i;
+					}
+					//printf("%s %s\n", request.name, cachedb[i].rr.name);
+			/*	}
+				else {
+					//printf("%u\n", cachedb[1].rr.type);
+					return i;
+				}
+			*/
 			}
 		}
 		//printf("name: %s\n", cachedb[i].rr.name);
@@ -199,10 +235,14 @@ dns_rr get_question(unsigned char *request) {
 	rr.name = temp;
 	rr.type = request[i + 2];
 	rr.class = request[i + 4];
+	//printf("%d\n", request[i + 6]);
+	//memcpy(rr.rdata, request + i + 7, request[i + 6]);
 
 	//printf("%s\n", rr.name);
 	//printf("%d\n", rr.type);
 	//printf("%d\n", rr.class);
+	//printf("%s\n", rr.rdata);
+	//print_bytes(rr.name, 11);
 	
 	return rr;
 }
@@ -254,14 +294,10 @@ int get_response(unsigned char *request, int len, unsigned char *response) {
 	 */
 
 	int valid = is_valid_request(request);
+	int answer = 0;
+	char toadd[BUFFER_MAX];
+	int sizeof_toadd = 0;
 
-/*	if(valid) {
-		printf("request is valid\n");
-	}
-	else {
-		printf("request is not valid\n");
-	}
-*/
 	// copy ID from request to response
 	response[0] = request[0];
 	response[1] = request[1];
@@ -303,65 +339,104 @@ int get_response(unsigned char *request, int len, unsigned char *response) {
 	response[i] = 0x00;
 	i++;
 
-	int index = search_db(get_question(request));
+	int index = -1;
+	int type_of_req = 1;
+
+	dns_rr entry = get_question(request);
+
+	while(1) {
+		index = search_db(entry);
+		// if no entry in the database match the name and type or is expired
+		if(index == -1) {
+			//printf("%s\n", entry.name);
+			index = search_db_cname(entry);
+			//printf("%d\n", index);
+			if(index == -1) {
+				// set the response code to 3 (NXDOMAIN)
+				response[3] = 0x03;
+				// set the answer count to 0
+				response[7] = 0x00;
+				//print_bytes(response, i);
+				return i;
+			}
+			type_of_req = 5;
+			answer++;
+			entry.name = cachedb[index].rr.rdata;
+			//print_bytes(entry.name, 11);
+			toadd[0] = 0x00;
+			toadd[1] = 0x05;
+			toadd[2] = 0x00;
+			toadd[3] = 0x01;
+			toadd[4] = 0x00;
+			toadd[5] = 0x00;
+			toadd[6] = 0x00;
+			toadd[7] = cachedb[index].expires - time(NULL);
+			toadd[8] = 0x00;
+			toadd[9] = strlen(entry.name);
+			memcpy(toadd + 10, entry.name, strlen(entry.name));
+			sizeof_toadd = 10 + strlen(entry.name);
+		}
+		else {
+			answer++;
+			entry = cachedb[index].rr;
+			break;
+		}
+	}
+
 	dns_rr rr = cachedb[index].rr;
 	time_t expires = cachedb[index].expires;
+	short type = cachedb[index].rr.type;
 
-	// if no entry in the database match the name and type or is expired
-	if(index == -1) {
-		// set the response code to 3 (NXDOMAIN)
-		response[3] = 0x03;
-		// set the answer count to 0
-		response[7] = 0x00;
-		//print_bytes(response, i);
-		return i;
+	// set the answer count to 1
+	//answer++;
+	response[7] = answer;
+	// set type of request
+	for(int j = 0; j < 4; j++) {
+		response[i] = request[i];
+		i++;
 	}
-	else {
-		// set the answer count to 1
-		response[7] = 0x01;
-		// set type of request
-		for(int j = 0; j < 4; j++) {
-			response[i] = request[i];
-			i++;
-		}
-		// set class of request
-
-		// set name
+	// set class of request
+	// set name
+	response[i] = 0xc0;
+	i++;
+	response[i] = 0x0c;
+	i++;
+	// if type == cname
+	if(type_of_req == 5) {
+		memcpy(response + i, toadd, sizeof_toadd);
+		//printf("%d\n", strlen(toadd));
+		i += sizeof_toadd;
 		response[i] = 0xc0;
 		i++;
-		response[i] = 0x0c;
+		response[i] = i - 13;
 		i++;
-		// set type
-		response[i] = 0x00;
-		i++;
-		response[i] = rr.type;
-		i++;
-		// set class
-		response[i] = 0x00;
-		i++;
-		response[i] = rr.class;
-		i++;
-		// set ttl (4 bytes)
-		response[i] = 0x00;
-		i++;
-		response[i] = 0x00;
-		i++;
-		response[i] = 0x00;
-		i++;
-		response[i] = expires - time(NULL);
-		i++;
-		// rr.ttl = ((expires - time(NULL))) | 0x00000000;
-  		// memcpy(response + i, &rr.ttl, sizeof(rr.ttl));
-  		// i += sizeof(rr.ttl);
-
-		// set rdata_len (2 bytes)
-		response[i] = 0x00;
-		i++;
-		memcpy(response + i, &rr.rdata_len, 2);
-		i++;
-		// add appropriate RR
-		memcpy(response + i, &rr.rdata, rr.rdata_len);
 	}
+
+	// type
+	response[i] = 0x00;
+	i++;
+	response[i] = 0x01;
+	i++;
+	// class
+	response[i] = 0X00;
+	i++;
+	response[i] = 0x01;
+	i++;
+	// ttl
+	response[i] = 0x00;
+	i++;
+	response[i] = 0x00;
+	i++;
+	response[i] = 0x00;
+	i++;
+	response[i] = expires - time(NULL);
+	i++;
+	response[i] = 0x00;
+	i++;
+	memcpy(response + i, &rr.rdata_len, 2);
+	i++;
+	// add appropriate RR
+	memcpy(response + i, rr.rdata, rr.rdata_len);
 
 	//print_bytes(cachedb[index].rr.rdata, cachedb[index].rr.rdata_len);
 	//print_bytes(request, len);
@@ -525,7 +600,7 @@ int main(int argc, char *argv[]) {
 		exit(1);
 	}
 	if (argc > 3) {
-	       	if (strcmp(argv[1], "-d") != 0) {
+	    if (strcmp(argv[1], "-d") != 0) {
 			fprintf(stderr, "Usage: %s [-d] <cache file> <port>\n", argv[0]);
 			exit(1);
 		}
@@ -542,7 +617,13 @@ int main(int argc, char *argv[]) {
 	if(daemonize) {
 		pid_t pid = fork();
 		if (pid != 0) {
+			printf("%d\n", pid);
 			exit(0);
+		}
+		else {
+			close(0);
+			close(1);
+			close(2);
 		}
 	}
 	serve_udp(port);
